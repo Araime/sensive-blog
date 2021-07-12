@@ -1,3 +1,4 @@
+from django.db.models import Count
 from django.db import models
 from django.urls import reverse
 from django.contrib.auth.models import User
@@ -5,9 +6,23 @@ from django.contrib.auth.models import User
 
 class PostQuerySet(models.QuerySet):
 
-    def year(self, year):
-        posts_at_year = self.filter(published_at__year=year).order_by('published_at')
-        return posts_at_year
+    def fresh(self):
+        fresh_posts = self.order_by('-published_at')
+        return fresh_posts
+
+    def popular(self):
+        popular_posts = self.annotate(count_likes=Count('likes')).order_by('-count_likes')
+        return popular_posts
+
+    def fetch_with_comments_count(self):
+        post_with_comments = Post.objects.filter(
+            id__in=[post.id for post in self]
+        ).annotate(comments_count=Count('comments'))
+        post_ids_and_comments = dict(post_with_comments.values_list('id', 'comments_count'))
+
+        for post in self:
+            post.comments_count = post_ids_and_comments[post.id]
+        return self
 
 
 class Post(models.Model):
@@ -46,8 +61,17 @@ class Post(models.Model):
     objects = PostQuerySet.as_manager()
 
 
+class TagQuerySet(models.QuerySet):
+
+    def popular(self):
+        popular_tags = self.annotate(count_posts=Count('posts')).order_by('-count_posts')
+        return popular_tags
+
+
 class Tag(models.Model):
     title = models.CharField('Тег', max_length=20, unique=True)
+
+    objects = TagQuerySet.as_manager()
 
     def __str__(self):
         return self.title
